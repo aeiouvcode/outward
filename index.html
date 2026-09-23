@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-zopfomDtGbh1GKDG8hgCIiGyrrTOMfh8yPAzOkWHS2Q='; style-src 'sha256-iM5mrV68WawWeNRng6TmtgQjNZNhHzyOfz4to/S147A='; img-src data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Nq0Z19Pa4SK8jOqR/hvRK8yXJ+GsFpNz5RbiCoS/ffw='; style-src 'sha256-g3CHroIGV9HzL677wwVpLEDxLaPxw4xs2rYH4UiO9OA='; img-src data:; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#F3EBDD">
 <title>Outward</title>
@@ -36,6 +36,7 @@ footer{display:flex;gap:26px;justify-content:center;padding:4px 0 6px}
 .card.on{opacity:1;pointer-events:auto}
 .sheet{width:min(320px,86vw);padding:28px 24px 22px;border-radius:24px;background:#FBF6EE;box-shadow:0 20px 50px rgba(91,69,53,.18),0 2px 0 rgba(91,69,53,.12);text-align:center;transform:translateY(10px);transition:transform .45s cubic-bezier(.2,1.2,.4,1)}
 .card.on .sheet{transform:none}
+.kick{font:600 12px/1 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#3F93D6;margin-bottom:10px}
 .sheet h2{margin:0 0 6px;font:500 30px/1.1 ui-serif,Georgia,serif}
 .sheet p{margin:0 0 18px;color:#8C7865}
 .cta{display:block;width:100%;padding:14px;border-radius:16px;background:var(--ink);color:#FBF6EE;font-weight:600;box-shadow:0 3px 0 #3b2c21}
@@ -65,6 +66,7 @@ footer{display:flex;gap:26px;justify-content:center;padding:4px 0 6px}
 </div>
 <div class="card on" id="title"><div class="sheet"><canvas id="logo"></canvas><h1>Outward</h1><div class="sub">Untangle the board. One arrow at a time.</div><button class="btn cta" id="play">Play</button><div class="ghost" id="cont"></div></div></div>
 <div class="card" id="win"><div class="sheet"><h2 id="winH">Clear</h2><div class="stars" id="stars"></div><p id="winP"></p><button class="btn cta" id="next">Next level</button><button class="btn ghost" id="replay">Replay</button></div></div>
+<div class="card" id="twist"><div class="sheet"><div class="kick">New twist</div><h2 id="twH"></h2><p id="twP"></p><button class="btn cta" id="twGo">Play</button></div></div>
 <div class="card" id="lose"><div class="sheet"><h2>Out of hearts</h2><p>The board resets. Hold an arrow to see where it would go.</p><button class="btn cta" id="retry">Try again</button></div></div>
 <script>
 (()=>{
@@ -104,6 +106,17 @@ const SH=[
  ["drop",1.25,(u,v)=>{const b=Math.hypot(u,v-.3)<.66;const t=v<.3&&v>-.98&&Math.abs(u)<(v+.98)*.52;return b||t}],
  ["anchor",1.1,(u,v)=>{const ring=Math.abs(Math.hypot(u,v+.78)-.15)<.09;const shaft=Math.abs(u)<.09&&v>-.63&&v<.9;const bar=Math.abs(v+.35)<.08&&Math.abs(u)<.45;const r=Math.hypot(u,v-.2);const arc=Math.abs(r-.7)<.1&&v>.2;return ring||shaft||bar||arc}],
 ];
+const TW={shackled:["Shackled","Ochre arrows wear a shackle. The first clear tap breaks it, the second sends the arrow out.","First clear tap breaks the shackle, the second sends it out."],frozen:["Frozen","Pale blue arrows are frozen. They thaw once 3 other arrows have left. Tapping ice costs nothing.","Frozen arrows thaw after 3 others leave."],thin:["Thin Margin","Only 2 drops this level. Hold an arrow to check its path before you tap.","Only 2 drops. Hold an arrow to check its path."],mix:["Shackled + Frozen","Shackles and ice on the same board. Break the shackle, wait out the ice.","Break the shackle. Wait out the ice."]};
+function twistOf(L){const m=L%20;return m===5?"shackled":m===10?"frozen":m===15?"thin":m===0?"mix":null}
+// twists are overlays computed purely from L on top of the generated board: the generator is untouched
+function applyTwist(G,L){const tw=twistOf(L);G.tw=tw;if(!tw||tw==="thin")return;const ord=G.sn.map((s,i)=>i).sort((a,b)=>G.sn[b].cells.length-G.sn[a].cells.length||a-b);
+ if(tw==="shackled"){ord.slice(0,2).forEach(i=>G.sn[i].shackle=true);return}
+ const pickFrozen=(cands,k)=>{const out=[];for(const i of cands){if(out.length===k)break;const test=out.concat(i);if(frozenOk(G,test))out.push(i)}return out};
+ if(tw==="frozen"){pickFrozen(ord,2).forEach(i=>G.sn[i].frozen=true);return}
+ G.sn[ord[0]].shackle=true;pickFrozen(ord.slice(1),1).forEach(i=>G.sn[i].frozen=true)}
+function frozenOk(G,fz){const own=Int16Array.from(G.own),alive=G.sn.map(()=>true);let gone=0,prog=true,left=G.sn.length;
+ const clear=i=>{const s=G.sn[i],h=s.cells[s.cells.length-1],d=s.dir;let x=h%G.C+DX[d],y=((h/G.C)|0)+DY[d];while(x>=0&&y>=0&&x<G.C&&y<G.R){const o=own[y*G.C+x];if(o>=0&&o!==i)return false;x+=DX[d];y+=DY[d]}return true};
+ while(prog&&left){prog=false;for(let i=0;i<G.sn.length;i++){if(!alive[i]||(gone<3&&fz.includes(i)))continue;if(clear(i)){alive[i]=false;left--;gone++;prog=true;for(const c of G.sn[i].cells)own[c]=-1}}}return left===0}
 function spec(L){
  if(L===1)return{sh:0,cols:5,rows:5,maxLen:4};
  if(L<=5)return{sh:0,cols:4+L*2,rows:4+L*2,maxLen:4+L*2};
@@ -163,13 +176,14 @@ function drawSnake(s,off,col,wide){const pts=pathPts(s,off);const lw=Math.min(4.
  const stroke=(c,w)=>{ctx.strokeStyle=c;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(q[0][0],q[0][1]);for(let i=1;i<q.length;i++)ctx.lineTo(q[i][0],q[i][1]);ctx.stroke()};
  const head=(c,grow)=>{const tx=last[0]+DX[d]*(ah+grow),ty=last[1]+DY[d]*(ah+grow),px=-DY[d],py=DX[d],b2x=last[0]-DX[d]*(ah*.25+grow*.4),b2y=last[1]-DY[d]*(ah*.25+grow*.4);
   ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(b2x+px*(aw+grow),b2y+py*(aw+grow));ctx.lineTo(b2x-px*(aw+grow),b2y-py*(aw+grow));ctx.closePath();ctx.fill()};
- if(wide){stroke("#FFFDF8",lw+Math.min(9,cell*.3));head("#FFFDF8",Math.min(4,cell*.12))}
- stroke(col,lw);head(col,0)}
+ if(wide){const wc=wide===true?"#FFFDF8":wide;stroke(wc,lw+Math.min(9,cell*.3));head(wc,Math.min(4,cell*.12))}
+ stroke(col,lw);head(col,0);
+ if(s.shackle&&!s.red){const m=pts[Math.floor(pts.length/2)],rr=Math.max(3,cell*.26);ctx.lineWidth=Math.max(1.4,lw*.8);ctx.strokeStyle=col;ctx.beginPath();ctx.arc(m[0]-rr*.45,m[1],rr*.62,0,7);ctx.stroke();ctx.beginPath();ctx.arc(m[0]+rr*.45,m[1],rr*.62,0,7);ctx.stroke()}}
 function draw(){const G=S.G;if(!G)return;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,cv.width,cv.height);
  if(S.grid){ctx.fillStyle="rgba(91,69,53,.16)";for(let i=0;i<G.C*G.R;i++)if(G.mask[i]){ctx.beginPath();ctx.arc(cx(i),cy(i),Math.max(1,cell*.06),0,7);ctx.fill()}}
  if(S.guide>=0&&G.sn[S.guide].alive){const s=G.sn[S.guide],h=s.cells[s.cells.length-1],b=blockerOf(G,S.guide);const len=b?b.k-.5:Math.max(G.C,G.R);ctx.setLineDash([cell*.25,cell*.22]);ctx.lineWidth=Math.max(1.2,cell*.08);ctx.strokeStyle=b?"#C0462F":"#3F93D6";ctx.beginPath();ctx.moveTo(cx(h),cy(h));ctx.lineTo(cx(h)+DX[s.dir]*len*cell,cy(h)+DY[s.dir]*len*cell);ctx.stroke();ctx.setLineDash([])}
  const now=performance.now();
- G.sn.forEach((s,i)=>{if(!s.alive||s.moving)return;const fl=S.flash.get(i);let col=s.red?"#C0462F":"#5B4535";if(fl&&now<fl)col="#9C7A5E";const off=s.bump?s.bump.off:0;drawSnake(s,off,i===S.hint?"#3F93D6":col,i===S.hint)});
+ G.sn.forEach((s,i)=>{if(!s.alive||s.moving)return;const fl=S.flash.get(i);let col=s.red?"#C0462F":"#5B4535";if(fl&&now<fl)col="#9C7A5E";const off=s.bump?s.bump.off:0;if(s.frozen&&!s.red)drawSnake(s,off,"#7FAECB","#DDEBF2");else if(s.shackle&&!s.red&&i!==S.hint&&!(fl&&now<fl))drawSnake(s,off,"#B07A2A","#F3E3C4");else drawSnake(s,off,i===S.hint?"#3F93D6":col,i===S.hint)});
  for(const a of S.anim)drawSnake(a.s,a.off,a.s.red?"#C0462F":"#5B4535",false)}
 let raf=0;function loop(){raf=0;const now=performance.now();let busy=false;
  for(const a of S.anim){const t=Math.min(1,(now-a.t0)/a.dur);a.off=a.total*(t*t*(1.6-.6*t));if(t<1)busy=true;else a.fin=true}
@@ -179,17 +193,22 @@ let raf=0;function loop(){raf=0;const now=performance.now();let busy=false;
  if(S.hint>=0)busy=true;draw();if(busy)raf=requestAnimationFrame(loop)}
 const kick=()=>{if(!raf)raf=requestAnimationFrame(loop)};
 function renderHearts(){$("hearts").innerHTML=Array.from({length:S.maxH},(_,i)=>i).map(i=>i<S.hearts?HEART:HEART.replace("<svg",'<svg class="lost"')).join("")}
-function tips(){return S.L===1?"Tap an arrow with a clear path. It slides out along its own line.":S.L===2?"Blocked arrows cost a heart. Hold an arrow to see its path.":S.L===3?"Everything interlocks. Find the ones that are free first.":""}
-function load(L){S.L=L;S.G=generate(L);S.maxH=L<10?3:L<30?4:5;S.hearts=S.maxH;S.hints=3;S.done=false;S.moves=0;S.misses=0;S.anim=[];S.hint=-1;S.guide=-1;S.flash.clear();
- $("lvl").textContent="Level "+L;$("hintN").textContent=S.hints;$("tip").textContent=tips();renderHearts();layout();if(!S.preview)store.set("current",L);
+function tips(){if(S.G&&S.G.tw)return TW[S.G.tw][2];return S.L===1?"Tap an arrow with a clear path. It slides out along its own line.":S.L===2?"Blocked arrows cost a heart. Hold an arrow to see its path.":S.L===3?"Everything interlocks. Find the ones that are free first.":""}
+function load(L){S.L=L;S.G=generate(L);applyTwist(S.G,L);S.gone=0;S.maxH=S.G.tw==="thin"?2:L<10?3:L<30?4:5;S.hearts=S.maxH;S.hints=3;S.done=false;S.moves=0;S.misses=0;S.anim=[];S.hint=-1;S.guide=-1;S.flash.clear();
+ $("lvl").textContent="Level "+L+(S.G.tw?" · "+TW[S.G.tw][0]:"");$("hintN").textContent=S.hints;$("tip").textContent=tips();renderHearts();layout();if(!S.preview)store.set("current",L);
+ if(S.G.tw){const seen=store.get("tw",{});if(!seen[S.G.tw]){seen[S.G.tw]=1;store.set("tw",seen);$("twH").textContent=TW[S.G.tw][0];$("twP").textContent=TW[S.G.tw][1];$("twist").classList.add("on")}}
  if(L===1)setTimeout(()=>{if(S.L===1&&!S.moves)showHint(true)},1500)}
-function removable(){const G=S.G,o=[];G.sn.forEach((s,i)=>{if(s.alive&&!s.moving&&!blockerOf(G,i))o.push(i)});return o}
+function removable(){const G=S.G,o=[];G.sn.forEach((s,i)=>{if(s.alive&&!s.moving&&!s.frozen&&!blockerOf(G,i))o.push(i)});return o}
 S.removable=removable;
 function showHint(free){if(S.done)return;const r=removable();if(!r.length)return;if(!free){if(S.hints<=0)return;S.hints--;$("hintN").textContent=S.hints;$("hintBtn").classList.toggle("off",S.hints<=0)}
  // prefer the arrow that frees the most others
  let best=r[0],bs=-1;const G=S.G;for(const i of r){const save=G.sn[i].cells.slice();save.forEach(c=>G.own[c]=-1);G.sn[i].alive=false;const n=removable().length;G.sn[i].alive=true;save.forEach(c=>G.own[c]=i);if(n>bs){bs=n;best=i}}
  S.hint=best;Snd.hint();kick()}
-function tapArrow(i){const G=S.G,s=G.sn[i];if(S.done||!s||!s.alive||s.moving||s.bump)return;const b=blockerOf(G,i);
+function tapArrow(i){const G=S.G,s=G.sn[i];if(S.done||!s||!s.alive||s.moving||s.bump)return;
+ if(s.frozen){s.bump={off:0,dist:.18,t0:performance.now(),dur:260};Snd.tick();$("tip").textContent="Frozen. It thaws after "+Math.max(1,3-S.gone)+" more arrow"+(3-S.gone===1?"":"s")+" leave.";kick();return}
+ const b=blockerOf(G,i);
+ if(!b&&s.shackle){s.shackle=false;S.flash.set(i,performance.now()+380);s.bump={off:0,dist:.3,t0:performance.now(),dur:300};Snd.tick();setTimeout(()=>Snd.tick(),90);if(S.hint===i)S.hint=-1;kick();return}
+ if(!b){S.gone++;if(S.gone===3){let th=0;G.sn.forEach((q,k)=>{if(q.frozen){q.frozen=false;S.flash.set(k,performance.now()+420);th++}});if(th){setTimeout(()=>Snd.hint(),150);$("tip").textContent="The ice is gone."}}}
  if(!b){if(S.hint===i)S.hint=-1;if(S.guide===i)S.guide=-1;s.cells.forEach(c=>G.own[c]=-1);s.alive=false;s.moving=true;S.moves++;
   const h=s.cells[s.cells.length-1],x=h%G.C,y=(h/G.C)|0;const toEdge=s.dir===1?G.C-x:s.dir===3?x+1:s.dir===2?G.R-y:y+1;const total=toEdge+s.cells.length+1;
   S.anim.push({s,off:0,total,t0:performance.now(),dur:260+total*26});Snd.whoosh(s.cells.length);kick();
@@ -214,9 +233,10 @@ const sb=$("snd"),paint=()=>sb.classList.toggle("off",!Snd.on);paint();sb.onclic
 $("menu").onclick=()=>{if(!S.done)load(S.L)};
 $("next").onclick=()=>{S.preview=false;$("win").classList.remove("on");load(S.L+1)};
 $("replay").onclick=()=>{$("win").classList.remove("on");load(S.L)};
+$("twGo").onclick=()=>{Snd.init();Snd.tick();$("twist").classList.remove("on")};
 $("retry").onclick=()=>{$("lose").classList.remove("on");load(S.L)};
 $("play").onclick=()=>{Snd.init();Snd.tick();$("title").classList.remove("on")};
-addEventListener("keydown",e=>{const k=e.key.toLowerCase();if(k==="h")showHint(false);if(k==="m")sb.onclick();if(k==="g")$("gridBtn").onclick();if(e.key==="Enter")for(const c of["title","win","lose"])if($(c).classList.contains("on")){$(c).querySelector(".cta").click();break}});
+addEventListener("keydown",e=>{const k=e.key.toLowerCase();if(k==="h")showHint(false);if(k==="m")sb.onclick();if(k==="g")$("gridBtn").onclick();if(e.key==="Enter")for(const c of["title","twist","win","lose"])if($(c).classList.contains("on")){$(c).querySelector(".cta").click();break}});
 addEventListener("resize",layout);
 document.addEventListener("visibilitychange",()=>{if(Snd.ctx){document.hidden?Snd.ctx.suspend():Snd.on&&Snd.ctx.resume()}});
 window.onerror=()=>true;
